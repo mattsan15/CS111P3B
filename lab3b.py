@@ -260,6 +260,7 @@ def getIndirectValues(fd):
     return listOfLists
 
 def main():
+    RETURNVALUE = 0
     nameOfCSVfile = sys.argv[1]
     fd = open(nameOfCSVfile, "r")
 
@@ -276,34 +277,219 @@ def main():
     # This returns a list of lists. For inodeValue[i][j], i represents the 'i'th
     # inode summary. The j represents the 'j'th element in the inode summary. For
     # example, inodeValue[2][4] will return the group number (4) of the 3rd (2)
-    # inode summary. To figure out which element number j corresponds to which
-    # type of value, look near the end of the getInodeValues function.
+    # inode summary.
     inodeValues = getInodeValues(fd)
 
     # Same as above, a list of lists. For dirValues[i][j], i represents the 'i'th
     # directory entry. The j represents the 'j'th element in the directory entry.
-    # To figure out which element number j correspond to which type of value, look
-    # near the end of the getDirEntries function.
     dirValues = getDirEntries(fd)
 
     # Same as above, a list of lists. For indirectValues[i][j], i represents the
     # 'i'th indirect block. The j represents the 'j'th element about that indirect
-    # block. To figure out which element number j corresponds to which type of value,
-    # look near the end of the getIndirectValues function.
+    # block.
     indirectValues = getIndirectValues(fd)
     
-    # This is just test code to print out values of everything we just read in.
-    # Feel free to modify/remove this.
-    print superBlockValues
-    print freeBlockValues
-    print freeInodeValues
+
+    #Block Consistency Audits Algorithm
+    #Inodes inconsistency
     for i in range(len(inodeValues)):
-        print inodeValues[i]
-    for i in range(len(dirValues)):
-        print dirValues[i]
+        for x in xrange(11,26):
+            if (inodeValues[i][x] < 0 or inodeValues[i][x] > superBlockValues[0]):
+                RETURNVALUE = 2
+                if(x < 23):
+                    sys.stdout.write("INVALID BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], x-11))
+                elif (x == 23):
+                    sys.stdout.write("INVALID INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 12))    
+                elif (x == 24):
+                    sys.stdout.write("INVALID DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 268))
+                elif (x == 25):
+                    sys.stdout.write("INVALID TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 65804))
+            #######################################################################################################################
+            if (inodeValues[i][x] < ((superBlockValues[1]*superBlockValues[3])/superBlockValues[2])+5 and inodeValues[i][x] > 0):
+                RETURNVALUE = 2
+                if(x < 23):
+                    sys.stdout.write("RESERVED BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], x-11))
+                elif (x == 23):
+                    sys.stdout.write("RESERVED INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 12))    
+                elif (x == 24):
+                    sys.stdout.write("RESERVED DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 268))
+                elif (x == 25):
+                    sys.stdout.write("RESERVED TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][x],inodeValues[i][0], 65804))
+    ###############################################################################################################################
+    #indirect block inconsistency
     for i in range(len(indirectValues)):
-        print indirectValues[i]
+        if (indirectValues[i][4] < 0 or indirectValues[i][4] > superBlockValues[0]):
+            RETURNVALUE = 2
+            if(indirectValues[i][1] == 1):
+                sys.stdout.write("INVALID INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))
+            elif (indirectValues[i][1] == 2):
+                sys.stdout.write("INVALID DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))
+            elif (indirectValues[i][1] == 3):
+                sys.stdout.write("INVALID TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))
+            #######################################################################################################################
+        if (indirectValues[i][4] < ((superBlockValues[1]*superBlockValues[3])/superBlockValues[2])+5 and indirectValues[i][4] > 0):
+            RETURNVALUE = 2
+            if(indirectValues[i][1] == 1):
+                sys.stdout.write("RESERVED INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))    
+            if(indirectValues[i][1] == 2):
+                sys.stdout.write("RESERVED DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))
+            if(indirectValues[i][1] == 3):
+                sys.stdout.write("RESERVED TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(indirectValues[i][4],indirectValues[i][0],indirectValues[i][2]))
+    ###########################################################################################
+    #UNREFRENCED
+    UNREFRENCED_BLOCKS = {}
+    for i in range(((superBlockValues[1]*superBlockValues[3])/superBlockValues[2])+5,superBlockValues[0]): #due to range implementation block 64 is not being checked for unrefrenced
+        UNREFRENCED_BLOCKS[i] = False
+        
+    for i in range(len(inodeValues)):
+        for j in xrange(11,26):
+            UNREFRENCED_BLOCKS[inodeValues[i][j]] = True
+    for i in range(len(indirectValues)):
+        UNREFRENCED_BLOCKS[indirectValues[i][4]] = True
+    for x in freeBlockValues:
+        UNREFRENCED_BLOCKS[x] = True
+
+    for i in range(((superBlockValues[1]*superBlockValues[3])/superBlockValues[2])+5,superBlockValues[0]): #due to range implementation block 64 is not being checked for unrefrenced
+        if (UNREFRENCED_BLOCKS[i] == False):
+            RETURNVALUE = 2
+            sys.stdout.write("UNREFERENCED BLOCK {}\n".format(i))
+
+    #ALLOCATED
+    ALLOCATED_BLOCKS = {}
+    for i in range(len(inodeValues)):
+        for j in xrange(11,26):
+            ALLOCATED_BLOCKS[inodeValues[i][j]] = False
+    for i in range(len(indirectValues)):
+        ALLOCATED_BLOCKS[indirectValues[i][4]] = False
+    for x in freeBlockValues:
+        if x in ALLOCATED_BLOCKS:
+            RETURNVALUE = 2
+            sys.stdout.write("ALLOCATED BLOCK {} ON FREELIST\n".format(x))
+
+    #DUPLICATE_BLOCKS
+    DUPLICATE_BLOCK = {}
+
+    for i in range(len(inodeValues)):
+        for j in xrange(11,26):
+            if (inodeValues[i][j] > 0 and inodeValues[i][j] <= superBlockValues[0]):
+                if inodeValues[i][j] in DUPLICATE_BLOCK:
+                    DUPLICATE_BLOCK[inodeValues[i][j]] = True
+                else:
+                    DUPLICATE_BLOCK[inodeValues[i][j]] = False
     
+    for i in range(len(indirectValues)):
+        if (indirectValues[i][4] > 0 and indirectValues[i][4] <= superBlockValues[0]):
+            if indirectValues[i][4] in DUPLICATE_BLOCK:
+                DUPLICATE_BLOCK[indirectValues[i][4]] = True
+            else:
+                DUPLICATE_BLOCK[indirectValues[i][4]] = False
     
+    for i in DUPLICATE_BLOCK:
+        if (DUPLICATE_BLOCK[i] == True):
+            for j in range(len(inodeValues)):
+                for k in xrange(11,26):
+                    if (inodeValues[j][k] == i):
+                        RETURNVALUE = 2
+                        if(k < 23):
+                            sys.stdout.write("DUPLICATE BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[j][k],inodeValues[j][0], k-11))
+                        elif (k == 23):
+                            sys.stdout.write("DUPLICATE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[j][k],inodeValues[j][0], 12))    
+                        elif (k == 24):
+                            sys.stdout.write("DUPLICATE DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[j][k],inodeValues[j][0], 268))
+                        elif (k == 25):
+                            sys.stdout.write("DUPLICATE TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[j][k],inodeValues[j][0], 65804))
+            
+            for j in range(len(indirectValues)):
+                if (indirectValues[i][4] == i):
+                    RETURNVALUE = 2
+                    if(indirectValues[i][1] == 1):
+                        sys.stdout.write("DUPLICATE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][4],inodeValues[i][0],inodeValues[i][2]))
+                    elif (indirectValues[i][1] == 2):
+                        sys.stdout.write("DUPLICATE DOUBLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][4],inodeValues[i][0],inodeValues[i][2]))
+                    elif (indirectValues[i][1] == 3):
+                        sys.stdout.write("DUPLICATE TRIPLE INDIRECT BLOCK {} IN INODE {} AT OFFSET {}\n".format(inodeValues[i][4],inodeValues[i][0],inodeValues[i][2]))
+
+##############################I-node Audits###################################
+
+    #Allocation
+    ALLOCATED_INODE = {}
+    #Add all allocated nodes
+    for i in range(len(inodeValues)):
+        ALLOCATED_INODE[inodeValues[i][0]] = False
+
+
+    for j in freeInodeValues:
+        if j in ALLOCATED_INODE:
+            ALLOCATED_INODE[j] = True
+
+    for k in ALLOCATED_INODE:
+        if (ALLOCATED_INODE[k] == True):
+            RETURNVALUE = 2
+            sys.stdout.write("ALLOCATED INODE {} ON FREELIST\n".format(k))
+
+    #Un-Allocated
+    UNALLOCATED_INODE = {}
+    UNALLOCATED_INODE[2] = False
+    for x in range(superBlockValues[6],superBlockValues[1]+1):
+        UNALLOCATED_INODE[x] = False
+    
+    for j in freeInodeValues:
+        if j in UNALLOCATED_INODE:
+            UNALLOCATED_INODE[j] = True
+
+    for i in range(len(inodeValues)):
+        UNALLOCATED_INODE[inodeValues[i][0]] = True
+
+    for i in UNALLOCATED_INODE:
+        if (UNALLOCATED_INODE[i] == False):
+            RETURNVALUE = 2
+            sys.stdout.write("UNALLOCATED INODE {} NOT ON FREELIST\n".format(i))
+###################################################################################################################
+#####################Directory Audit########################################################
+    #Directory Consistency Audits
+    REFERENCE_COUNT = {}
+    for i in range(len(dirValues)):
+        if dirValues[i][2] in REFERENCE_COUNT:
+            REFERENCE_COUNT[dirValues[i][2]] += 1
+        else:
+            REFERENCE_COUNT[dirValues[i][2]] = 1
+          
+    #Add all allocated nodes
+    for i in range(len(inodeValues)):
+        if(inodeValues[i][0] in REFERENCE_COUNT): 
+            if(inodeValues[i][5] != REFERENCE_COUNT[inodeValues[i][0]]):
+                RETURNVALUE = 2
+                sys.stdout.write("INODE {} HAS {} LINKS BUT LINKCOUNT IS {}\n".format(inodeValues[i][0],REFERENCE_COUNT[inodeValues[i][0]],inodeValues[i][5]))
+        else:
+            if (inodeValues[i][5] != 0):
+                RETURNVALUE = 2
+                sys.stdout.write("INODE {} HAS 0 LINKS BUT LINKCOUNT IS {}\n".format(inodeValues[i][0],inodeValues[i][5]))
+
+    #invalid inode
+    for i in range(len(dirValues)):
+        if (dirValues[i][2] < 1 or dirValues[i][2] > superBlockValues[1]):
+            RETURNVALUE = 2
+            sys.stdout.write("DIRECTORY INODE {} NAME {} INVALID INODE {}\n".format(dirValues[i][0],dirValues[i][5],dirValues[i][2]))
+
+        if(dirValues[i][5] == '.'):
+            if (dirValues[i][0] != dirValues[i][2]):
+                RETURNVALUE = 2
+                sys.stdout.write("DIRECTORY INODE {} NAME {} LINK TO INODE {} SHOULD BE {}\n".format(dirValues[i][0],dirValues[i][5],dirValues[i][2],dirValues[i][0]))
+
+        if(dirValues[i][5]  == '\'..\''):
+            if (dirValues[i][2] != 2):
+                RETURNVALUE = 2
+                sys.stdout.write("DIRECTORY INODE {} NAME {} LINK TO INODE {} SHOULD BE 2\n".format(dirValues[i][0],dirValues[i][5],dirValues[i][2]))
+    
+    #unallocated inode
+    INODES = []
+    for i in range(len(inodeValues)):
+        INODES.append(inodeValues[i][0])
+
+    for i in range(len(dirValues)):
+        if ((dirValues[i][2] not in INODES) and dirValues[i][2] > 0 and dirValues[i][2] <= superBlockValues[1]):
+            RETURNVALUE = 2
+            sys.stdout.write("DIRECTORY INODE {} NAME {} UNALLOCATED INODE {}\n".format(dirValues[i][0],dirValues[i][5],dirValues[i][2]))
+
 if __name__ == '__main__':  
    main()
